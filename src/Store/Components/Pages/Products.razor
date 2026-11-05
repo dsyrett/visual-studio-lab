@@ -1,6 +1,8 @@
 ﻿@page "/products"
 @using DataEntities
 @using Store.Services
+@using System.Text.Json
+@inject ProductService ProductService
 @inject IConfiguration Configuration
 @rendermode InteractiveServer
 @attribute [StreamRendering(true)]
@@ -8,30 +10,81 @@
 <PageTitle>Products</PageTitle>
 
 <h1>Products</h1>
-
 <p>Here are some of our amazing outdoor products that you can purchase.</p>
 
-@if (products == null)
+@if (loadError is not null)
 {
-    <p><em>Loading...</em></p>
+    <div class="alert alert-danger" role="alert">@loadError</div>
+}
+else if (products is null)
+{
+    <div class="d-flex justify-content-center align-items-center" role="status">
+        <div class="spinner-border">
+            <span class="visually-hidden">Loading products...</span>
+        </div>
+    </div>
+}
+else if (products.Count == 0)
+{
+    <p>No products are available right now.</p>
 }
 else
 {
-    <!--Implement Products table here-->
-    <p>Under construction...</p>
+    <ul class="product-grid">
+        @foreach (var product in products)
+        {
+            <li class="product-card">
+                @if (!string.IsNullOrWhiteSpace(product.ImageUrl))
+                {
+                    <img class="product-image"
+                         src="@($"{imagePrefix}{product.ImageUrl.TrimStart('/')}")"
+                         alt="@(product.Name ?? "Product image")" />
+                }
+                else
+                {
+                    <div class="product-image no-image" role="img" aria-label="No image available">
+                        <span>No image</span>
+                    </div>
+                }
 
+                <div class="product-details">
+                    <div class="product-heading">
+                        <h2 class="product-name">@product.Name</h2>
+                        <p class="product-price">@product.Price.ToString("C")</p>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(product.Description))
+                    {
+                        <p class="product-description">@product.Description</p>
+                    }
+                </div>
+            </li>
+        }
+    </ul>
 }
 
 @code {
     private List<Product>? products;
     private string imagePrefix = string.Empty;
+    private string? loadError;
 
     protected override async Task OnInitializedAsync()
     {
-        // Simulate asynchronous loading to demonstrate streaming rendering
-        await Task.Delay(500);
-        imagePrefix = Configuration["ImagePrefix"]!;
-        products = [];
-    }
+        var configuredPrefix = Configuration["ImagePrefix"];
+        if (string.IsNullOrWhiteSpace(configuredPrefix))
+        {
+            throw new InvalidOperationException("ImagePrefix is not configured.");
+        }
 
+        imagePrefix = $"{configuredPrefix.TrimEnd('/')}/";
+
+        try
+        {
+            products = await ProductService.GetProducts();
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or InvalidDataException or JsonException)
+        {
+            loadError = "Products could not be loaded. Please try again later.";
+        }
+    }
 }
